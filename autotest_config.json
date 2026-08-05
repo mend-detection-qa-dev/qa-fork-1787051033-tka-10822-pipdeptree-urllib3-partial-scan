@@ -1,0 +1,85 @@
+{
+  "description": "Regression test for TKA-10822 - Mend for GHE SCA: the pip resolver marks a scan partial because of a urllib3 version installed by the scan's OWN pipdeptree step. requirements.txt pins boto3~=1.26.64 -> botocore<1.30 -> urllib3<1.27, so `pip install -r requirements.txt` resolves urllib3 1.26.x. With python.resolveHierarchyTree=true the scanner then runs `pip install pipdeptree`; pipdeptree's transitive dep nab-index>=0.0.11 requires urllib3>=2.0 and upgrades the venv to urllib3 2.7.0. The skip-filter suppresses urllib3-2.7.0 for the repo-root resolution path but NOT for the requirements.txt path, emitting a RESOLUTION WARN 'Failed to resolve the following dependencies: [urllib3-2.7.0]' and marking the scan partial - even though urllib3-2.7.0 was never requested by the project. The discriminating signal is a scanner-log fingerprint (see logs.expected_log_lines): the test FAILS while the bug is present (WARN lines present) and PASSES once the skip-filter propagates to every per-manifest path (WARN lines absent). Wired with pytest.mark.xfail in tests/python/pip/test_scan_python_pip_projects.py.",
+  "version": 1.8,
+
+  "base_config": {
+    "branch": null,
+
+    "validate_scan_output": true,
+    "scan_output": {
+      "total_libs_scanned": {"gte": 5},
+      "_comment_total_libs_scanned": "requirements.txt (boto3, beautifulsoup4, requests) + setup.py (six) resolve to well over 5 libs once botocore/certifi/idna/urllib3/etc. are pulled. Lenient lower bound because transitive counts vary with pip resolver versions. urllib3-2.7.0 is NOT a real project dep and must not inflate the count."
+    },
+
+    "validate_dependency_tree": true,
+    "dependency_tree": {
+      "check_dependency_tree_detection_status": true,
+
+      "check_update_request_sca_results": true,
+      "_comment_check_update_request_sca_results": "Kept true per project convention. NOTE: it is NOT the discriminator for TKA-10822 - the bug produces a level=WARN entry with success:false while totalFail stays {} (ticket: totalSuccess {HOOKS:23, RESOLUTION:1}, totalFail {}). check_update_request_sca_results only fails on totalFail!={} or a level=ERROR entry, so it passes in both states. The log fingerprint below is the real discriminator.",
+
+      "check_system_paths": false,
+
+      "expected_total_dependencies_number": {"gte": 5},
+      "expected_direct_dependencies_number": {"gte": 3},
+      "_comment_expected_direct_dependencies_number": "Lenient gte per project convention for counts. boto3, beautifulsoup4, requests are the requirements.txt direct deps (>=3). six comes from setup.py. Not eq because hierarchy grouping of the two manifests varies.",
+      "expected_transitive_dependencies_number": {"gte": 1},
+
+      "direct_dependencies_names_list": {
+        "contains": ["boto3", "requests"]
+      },
+      "_comment_direct_dependencies_names_list": "Lenient contains of two stable direct deps. Mend emits pip artifactIds in wheel-filename form (e.g. boto3-1.26.165-py3-none-any.whl); the framework PEP 503 canonicalization (feedback_pep503_normalisation_framework_level) folds them to boto3 / requests, so the short names match. Intentionally NOT asserting on urllib3: urllib3-1.26.20 is a legitimate transitive in BOTH states and urllib3-2.7.0 is never fetched for the project in either state, so an inventory check does not distinguish bug-from-fixed - only the log fingerprint does.",
+
+      "validate_agent_versions": true,
+      "expected_agent_version": "",
+      "expected_plugin_version": "",
+
+      "validate_mend_tags": false,
+
+      "validate_checksums": false,
+      "checksums_config": {
+        "check_sha1_not_empty": false,
+        "check_sha1_format": false,
+        "check_sha1_consistency": false,
+        "check_checksums_by_formula": false,
+        "expected_dependency_checksums": []
+      },
+
+      "expected_dependency_pairs": []
+    },
+
+    "validate_vulnerabilities_table": true,
+    "vulnerabilities_table": {
+      "check_vulnerabilities_table_structure": true,
+      "expected_total_vulnerabilities_number": {"gte": 0}
+    },
+
+    "validate_scanner_logs": true,
+    "logs": {
+      "check_scanner_logs": true,
+      "detect_secrets": false,
+      "check_external_logs": false,
+      "expected_log_lines": [
+        {
+          "operator": "eq",
+          "value": "python.resolveHierarchyTree=true",
+          "_comment": "Positive check: confirms the trigger config is active (proven format - the sibling ignore-pip-install probe asserts python.ignorePipInstallErrors=true the same way). If absent, the pipdeptree contamination path never ran and the repro is not exercising the right scenario."
+        },
+        {
+          "operator": "ne",
+          "value": "Failed to resolve the following dependencies: [urllib3-2.7.0]",
+          "_comment": "PRIMARY DISCRIMINATOR. Negative check (passes when ABSENT). BUG PRESENT: the skip-filter misses the requirements.txt path -> this RESOLUTION WARN is emitted for urllib3-2.7.0 (a pipdeptree/nab-index-introduced version) -> substring present -> 'ne' FAILS -> reproduction confirmed (test xfails). BUG FIXED: skip-filter propagates to every per-manifest path -> no WARN -> substring absent -> 'ne' PASSES -> test xpasses."
+        },
+        {
+          "operator": "ne",
+          "value": "might not have been resolved completely",
+          "_comment": "SECONDARY DISCRIMINATOR. Negative check. The ticket shows the requirements.txt path logs 'dependency: urllib3-2.7.0 from .../requirements.txt, might not have been resolved completely' three times instead of the correct skip line. This phrase does not appear for this clean project once the bug is fixed. BUG PRESENT -> present -> FAILS; BUG FIXED -> absent -> PASSES."
+        }
+      ]
+    },
+
+    "validate_reachability": false,
+
+    "validate_project_contributors": false
+  }
+}

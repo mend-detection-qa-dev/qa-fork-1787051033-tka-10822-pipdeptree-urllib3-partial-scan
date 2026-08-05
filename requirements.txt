@@ -1,0 +1,17 @@
+# Regression test for TKA-10822
+# https://mend-io.atlassian.net/browse/TKA-10822
+#
+# Reproduces the pip "scan self-contamination" false-partial:
+#   1. boto3~=1.26.64 forces botocore<1.30 which constrains urllib3<1.27,
+#      so `pip install -r requirements.txt` resolves urllib3 to 1.26.x.
+#   2. The scanner then runs `pip install pipdeptree` (python.resolveHierarchyTree=true).
+#      pipdeptree's transitive dep nab-index>=0.0.11 requires urllib3>=2.0, so the
+#      venv is upgraded to urllib3 2.7.0 (a version NEVER requested by this project).
+#   3. The skip-filter suppresses urllib3-2.7.0 for the repo-root resolution path
+#      but NOT for the requirements.txt path -> spurious RESOLUTION WARN
+#      "Failed to resolve the following dependencies: [urllib3-2.7.0]" -> scan marked partial.
+#
+# The pin below is the essential trigger (upper-bound constraint on urllib3 via botocore).
+boto3~=1.26.64
+beautifulsoup4>=4.9.0
+requests>=2.25.0
