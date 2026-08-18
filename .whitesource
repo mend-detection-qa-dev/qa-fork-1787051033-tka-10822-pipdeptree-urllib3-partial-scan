@@ -4,5 +4,13 @@
   },
   "checkRunSettings": {
     "vulnerableCheckRunConclusionLevel": "failure"
+  },
+  "scanSettingsSAST": {
+    "enableScan": false
+  },
+  "remediateSettings": {
+    "workflowRules": {
+      "enabled": false
+    }
   }
 }
